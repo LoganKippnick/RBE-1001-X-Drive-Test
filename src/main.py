@@ -73,7 +73,7 @@ class Drive:
         rotationRPM = -self.__radPerSecToRPM(rotationSpeedRadPerSec)
 
         if fieldOriented:
-            directionRad -= self.gyro.heading(RotationUnits.REV) * 2 * math.pi
+            directionRad += self.gyro.heading(RotationUnits.REV) * 2 * math.pi
 
         coeff = self.SEC_PHI * translationRPM
         xProjection = coeff * math.sin(directionRad)
