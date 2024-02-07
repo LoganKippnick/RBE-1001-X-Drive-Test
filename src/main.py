@@ -61,14 +61,15 @@ class Drive:
         rpm = self.__metersPerSecToRPM(speedMetersPerSec)
 
         coeff = self.SEC_PHI * rpm
-        sin = math.sin(directionRad)
-        cos = math.cos(directionRad)
+        xProjection = coeff * math.sin(directionRad)
+        yProjection = coeff * math.cos(directionRad)
 
+        # zeroes will be rotation speed
         self.applyDesaturated(
-            coeff * -(sin - cos),
-            coeff * -(sin + cos),
-            coeff * (sin + cos),
-            coeff * (sin - cos)
+            0 - (xProjection - yProjection),
+            0 - (xProjection + yProjection),
+            0 + (xProjection + yProjection),
+            0 + (xProjection - yProjection)
         )
 
 drive = Drive()
