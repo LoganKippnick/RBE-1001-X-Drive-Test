@@ -57,10 +57,12 @@ class Drive:
     def applyDesaturated(self, flSpeedRPM, frSpeedRPM, blSpeedRPM, brSpeedRPM):
         fastestSpeedRPM = max(abs(flSpeedRPM), abs(frSpeedRPM), abs(blSpeedRPM), abs(brSpeedRPM))
         if(fastestSpeedRPM > Drive.Constants.MOTOR_MAX_SPEED_RPM):
-            flSpeedRPM /= fastestSpeedRPM
-            frSpeedRPM /= fastestSpeedRPM
-            blSpeedRPM /= fastestSpeedRPM
-            brSpeedRPM /= fastestSpeedRPM
+            ratio = Drive.Constants.MOTOR_MAX_SPEED_RPM / fastestSpeedRPM
+
+            flSpeedRPM *= ratio
+            frSpeedRPM *= ratio
+            blSpeedRPM *= ratio
+            brSpeedRPM *= ratio
         
         self.flDrive.spin(FORWARD, flSpeedRPM)
         self.frDrive.spin(FORWARD, frSpeedRPM)
@@ -90,8 +92,6 @@ class Drive:
 drive = Drive()
 
 while True:
-    # drive.applySpeeds(math.pi / 8, 0.1, 0)
-
     xIn = -controller.axis4.position() * 0.01
     yIn = controller.axis3.position() * 0.01
     thetaIn = -controller.axis1.position() * 0.01
