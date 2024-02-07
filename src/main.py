@@ -52,9 +52,9 @@ class Drive:
             brSpeedRPM /= fastestSpeedRPM
         
         self.flDrive.spin(FORWARD, flSpeedRPM)
-        self.frDrive.spin(FORWARD, flSpeedRPM)
-        self.blDrive.spin(FORWARD, flSpeedRPM)
-        self.brDrive.spin(FORWARD, flSpeedRPM)
+        self.frDrive.spin(FORWARD, frSpeedRPM)
+        self.blDrive.spin(FORWARD, blSpeedRPM)
+        self.brDrive.spin(FORWARD, brSpeedRPM)
 
     SEC_PHI = 2 / math.sqrt(2)
     def translate(self, directionRad: float, speedMetersPerSec: float):
@@ -65,21 +65,21 @@ class Drive:
         cos = math.cos(directionRad)
 
         self.applyDesaturated(
-            coeff * (sin + cos),
-            coeff * (sin - cos),
+            coeff * -(sin - cos),
             coeff * -(sin + cos),
-            coeff * -(sin - cos)
+            coeff * (sin + cos),
+            coeff * (sin - cos)
         )
 
 drive = Drive()
 
 while True:
-    drive.translate(0, 0.1)
+    drive.translate(math.pi / 8, 0.1)
 
     # xIn = controller.axis4.position() * 0.01
     # yIn = controller.axis3.position() * 0.01
 
     # direction = math.atan2(xIn, yIn)
-    # magnitude = math.hypot(xIn, yIn)
+    # # magnitude = math.hypot(xIn, yIn)
 
-    # drive.translate(direction, magnitude)
+    # drive.translate(direction, 100)
