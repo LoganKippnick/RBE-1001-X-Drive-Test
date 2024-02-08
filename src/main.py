@@ -69,25 +69,51 @@ class Drive:
         self.blDrive.spin(FORWARD, blSpeedRPM)
         self.brDrive.spin(FORWARD, brSpeedRPM)
 
+    # where phi is the angle between the x/y axis and the wheel vectors, which is always some multiple of pi/4
     SEC_PHI = 2 / math.sqrt(2)
     def applySpeeds(self, directionRad: float, translationSpeedMetersPerSec: float, rotationSpeedRadPerSec: float, fieldOriented: bool):
         translationRPM = self.__metersPerSecToRPM(translationSpeedMetersPerSec)
         rotationRPM = -self.__radPerSecToRPM(rotationSpeedRadPerSec)
 
+        # offset lateral direction by gyro heading for field-oriented control
         if fieldOriented:
             directionRad += self.gyro.heading(RotationUnits.REV) * 2 * math.pi
 
+        # find the x and y components of the direction vector mapped to a wheel vector
         coeff = self.SEC_PHI * translationRPM
         xProjection = coeff * math.sin(directionRad)
         yProjection = coeff * math.cos(directionRad)
 
-        # zeroes will be rotation speed
         self.applyDesaturated(
             rotationRPM - (xProjection - yProjection),
             rotationRPM - (xProjection + yProjection),
             rotationRPM + (xProjection + yProjection),
             rotationRPM + (xProjection - yProjection)
         )
+
+    def getActualDirectionOfTravelRad(self):
+        xLeftVectors = self.flDrive.velocity() * math.cos(7 * math.pi / 4) + self.blDrive.velocity() * math.cos(math.pi / 4)
+        yLeftVectors = self.flDrive.velocity() * math.sin(7 * math.pi / 4) + self.blDrive.velocity() * math.sin(math.pi / 4)
+
+        directionLeftVectors = math.atan2(xLeftVectors, yLeftVectors)
+        magnitudeLeftVectors = math.sqrt(xLeftVectors**2 + yLeftVectors**2)
+
+        xRightVectors = self.frDrive.velocity() * math.cos(5 * math.pi / 4) + self.brDrive.velocity() * math.cos(3 * math.pi / 4)
+        yRightVectors = self.frDrive.velocity() * math.sin(5 * math.pi / 4) + self.brDrive.velocity() * math.sin(3 * math.pi / 4)
+
+        directionRightVectors = math.atan2(xRightVectors, yRightVectors)
+        magnitudeRightVectors = math.sqrt(xRightVectors**2 + yRightVectors**2)
+
+        xSumVectors = magnitudeLeftVectors * math.cos(directionLeftVectors) + magnitudeRightVectors * math.cos(directionRightVectors)
+        ySumVectors = magnitudeLeftVectors * math.sin(directionLeftVectors) + magnitudeRightVectors * math.sin(directionRightVectors)
+
+        directionSumVectors = math.atan2(xSumVectors, ySumVectors)
+
+        return directionSumVectors
+    
+    def getActualSpeedMetersPerSec(self):
+        # TODO same as above but return magnitude divided by 4, but make sure above works first
+        pass
 
 drive = Drive()
 
