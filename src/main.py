@@ -80,40 +80,57 @@ class Drive:
             directionRad += self.gyro.heading(RotationUnits.REV) * 2 * math.pi
 
         # find the x and y components of the direction vector mapped to a wheel vector
-        coeff = self.SEC_PHI * translationRPM
-        xProjection = coeff * math.sin(directionRad)
-        yProjection = coeff * math.cos(directionRad)
+        coeffRPM = self.SEC_PHI * translationRPM
+        xProjectionRPM = coeffRPM * math.sin(directionRad)
+        yProjectionRPM = coeffRPM * math.cos(directionRad)
 
         self.applyDesaturated(
-            rotationRPM - (xProjection - yProjection),
-            rotationRPM - (xProjection + yProjection),
-            rotationRPM + (xProjection + yProjection),
-            rotationRPM + (xProjection - yProjection)
+            rotationRPM - (xProjectionRPM - yProjectionRPM),
+            rotationRPM - (xProjectionRPM + yProjectionRPM),
+            rotationRPM + (xProjectionRPM + yProjectionRPM),
+            rotationRPM + (xProjectionRPM - yProjectionRPM)
         )
 
     def getActualDirectionOfTravelRad(self):
-        xLeftVectors = self.flDrive.velocity() * math.cos(7 * math.pi / 4) + self.blDrive.velocity() * math.cos(math.pi / 4)
-        yLeftVectors = self.flDrive.velocity() * math.sin(7 * math.pi / 4) + self.blDrive.velocity() * math.sin(math.pi / 4)
+        xFL = self.flDrive.velocity() * math.cos(7 * math.pi / 4)
+        yFL = self.flDrive.velocity() * math.sin(7 * math.pi / 4)
 
-        directionLeftVectors = math.atan2(xLeftVectors, yLeftVectors)
-        magnitudeLeftVectors = math.sqrt(xLeftVectors**2 + yLeftVectors**2)
+        xFR = self.blDrive.velocity() * math.cos(math.pi / 4)
+        yFR = self.blDrive.velocity() * math.sin(math.pi / 4)
+        
+        xBL = self.frDrive.velocity() * math.cos(5 * math.pi / 4)
+        yBL = self.frDrive.velocity() * math.sin(5 * math.pi / 4)
 
-        xRightVectors = self.frDrive.velocity() * math.cos(5 * math.pi / 4) + self.brDrive.velocity() * math.cos(3 * math.pi / 4)
-        yRightVectors = self.frDrive.velocity() * math.sin(5 * math.pi / 4) + self.brDrive.velocity() * math.sin(3 * math.pi / 4)
 
-        directionRightVectors = math.atan2(xRightVectors, yRightVectors)
-        magnitudeRightVectors = math.sqrt(xRightVectors**2 + yRightVectors**2)
+        xBR = self.brDrive.velocity() * math.cos(3 * math.pi / 4)
+        yBR = self.brDrive.velocity() * math.sin(3 * math.pi / 4)
 
-        xSumVectors = magnitudeLeftVectors * math.cos(directionLeftVectors) + magnitudeRightVectors * math.cos(directionRightVectors)
-        ySumVectors = magnitudeLeftVectors * math.sin(directionLeftVectors) + magnitudeRightVectors * math.sin(directionRightVectors)
+        xSumVectors = xFL + xFR + xBL + xBR
+        ySumVectors = yFL + yFR + yBL + yBR
 
-        directionSumVectors = math.atan2(xSumVectors, ySumVectors)
+        magnitudeSumVectors = math.sqrt(xSumVectors * xSumVectors + ySumVectors * ySumVectors) / 4,
 
-        return directionSumVectors
+        return magnitudeSumVectors
     
     def getActualSpeedMetersPerSec(self):
-        # TODO same as above but return magnitude divided by 4, but make sure above works first
-        pass
+        xFL = self.flDrive.velocity() * math.cos(7 * math.pi / 4)
+        yFL = self.flDrive.velocity() * math.sin(7 * math.pi / 4)
+
+        xFR = self.blDrive.velocity() * math.cos(math.pi / 4)
+        yFR = self.blDrive.velocity() * math.sin(math.pi / 4)
+        
+        xBL = self.frDrive.velocity() * math.cos(5 * math.pi / 4)
+        yBL = self.frDrive.velocity() * math.sin(5 * math.pi / 4)
+
+        xBR = self.brDrive.velocity() * math.cos(3 * math.pi / 4)
+        yBR = self.brDrive.velocity() * math.sin(3 * math.pi / 4)
+
+        xSumVectors = xFL + xFR + xBL + xBR
+        ySumVectors = yFL + yFR + yBL + yBR
+
+        directionSumVectors = math.atan2(ySumVectors, xSumVectors)
+
+        return directionSumVectors
 
 drive = Drive()
 
