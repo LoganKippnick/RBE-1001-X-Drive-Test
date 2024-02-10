@@ -69,6 +69,22 @@ class Drive:
         self.blDrive.spin(FORWARD, blSpeedRPM)
         self.brDrive.spin(FORWARD, brSpeedRPM)
 
+    def applyDesaturatedDistance(self, flSpeedRPM, frSpeedRPM, blSpeedRPM, brSpeedRPM, distanceDelta, rotationDelta):
+        fastestSpeedRPM = max(abs(flSpeedRPM), abs(frSpeedRPM), abs(blSpeedRPM), abs(brSpeedRPM))
+        if(fastestSpeedRPM > Drive.Constants.MOTOR_MAX_SPEED_RPM):
+            ratio = Drive.Constants.MOTOR_MAX_SPEED_RPM / fastestSpeedRPM
+
+            flSpeedRPM *= ratio
+            frSpeedRPM *= ratio
+            blSpeedRPM *= ratio
+            brSpeedRPM *= ratio
+        
+        # TODO: CHANGE THIS TO SPIN FOR AND DO CALCULATIONS FOR DISTANCE FROM WHEELS
+        self.flDrive.spin(FORWARD, flSpeedRPM)
+        self.frDrive.spin(FORWARD, frSpeedRPM)
+        self.blDrive.spin(FORWARD, blSpeedRPM)
+        self.brDrive.spin(FORWARD, brSpeedRPM)
+
     # where phi is the angle between the x/y axis and the wheel vectors, which is always some multiple of pi/4
     SEC_PHI = 2 / math.sqrt(2)
     def applySpeeds(self, directionRad: float, translationSpeedMetersPerSec: float, rotationSpeedRadPerSec: float, fieldOriented: bool):
@@ -89,6 +105,28 @@ class Drive:
             rotationRPM - (xProjectionRPM + yProjectionRPM),
             rotationRPM + (xProjectionRPM + yProjectionRPM),
             rotationRPM + (xProjectionRPM - yProjectionRPM)
+        )
+
+    def applyDistance(self, directionRad: float, translationSpeedMetersPerSec: float, rotationSpeedRadPerSec: float, fieldOriented: bool, distanceDelta: float, rotationDelta: float):
+        translationRPM = self.__metersPerSecToRPM(translationSpeedMetersPerSec)
+        rotationRPM = -self.__radPerSecToRPM(rotationSpeedRadPerSec)
+
+        # offset lateral direction by gyro heading for field-oriented control
+        if fieldOriented:
+            directionRad += self.gyro.heading(RotationUnits.REV) * 2 * math.pi
+
+        # find the x and y components of the direction vector mapped to a wheel vector
+        coeff = self.SEC_PHI * translationRPM
+        xProjection = coeff * math.sin(directionRad)
+        yProjection = coeff * math.cos(directionRad)
+
+        self.applyDesaturatedDistance(
+            rotationRPM - (xProjection - yProjection),
+            rotationRPM - (xProjection + yProjection),
+            rotationRPM + (xProjection + yProjection),
+            rotationRPM + (xProjection - yProjection),
+            distanceDelta,
+            rotationDelta
         )
 
     def getActualDirectionOfTravelRad(self):
