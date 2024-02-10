@@ -32,35 +32,8 @@ class Constants:
 
         MOTOR_MAX_SPEED_RPM = 200
 
-        LOOP_PERIOD_MSECS = 20
-
         # where phi is the angle between the x/y axis and the wheel vectors, which is always some multiple of pi/4
         SEC_PHI = 2 / math.sqrt(2)
-
-        FUDGE_ODOMETRY_COEFF = 3
-
-class Odometry:
-    def __init__(self, x: float, y: float, theta: float, loopPeriodMSecs: float) -> None:
-        self.xMeters = x
-        self.yMeters = y
-        self.rotationRad = theta
-        self.loopPeriodSecs = loopPeriodMSecs / 1000
-        self.timer = Timer()
-
-    def update(self, xVelocityMetersPerSec: float, yVelocityMetersPerSec: float, headingRad: float):
-        self.xMeters += (xVelocityMetersPerSec * self.timer.value())
-        self.yMeters += (yVelocityMetersPerSec * self.timer.value())
-        self.rotationRad = headingRad
-        self.timer.reset()
-    
-    def getXMeters(self):
-        return self.xMeters
-    
-    def getYMeters(self):
-        return self.yMeters
-    
-    def getRotationRad(self):
-        return self.rotationRad
 
 class Drive:
     flDrive = Motor(DevicePorts.FL_DRIVE)
@@ -69,8 +42,6 @@ class Drive:
     brDrive = Motor(DevicePorts.BR_DRIVE)
 
     gyro = Inertial(DevicePorts.GYRO)
-
-    odometry = Odometry(0, 0, 0, Constants.LOOP_PERIOD_MSECS)
 
     def __init__(self):
         self.gyro.calibrate()
@@ -90,16 +61,6 @@ class Drive:
     @staticmethod
     def __radPerSecToRPM(speedRadPerSec):
         return (speedRadPerSec * Constants.WHEEL_CIRCUMFERENCE_IN * 60) / (2 * math.pi * Constants.WHEEL_CIRCUMFERENCE_IN)
-
-    def periodic(self):
-        directionRad = self.getActualDirectionOfTravelRad()
-        speedMetersPerSecond = self.getActualSpeedMetersPerSec()
-        
-        self.odometry.update(
-            speedMetersPerSecond * math.sin(directionRad),
-            speedMetersPerSecond * math.cos(directionRad),
-            self.gyro.heading(RotationUnits.REV) * 2 * math.pi
-        )
 
     def applyDesaturated(self, flSpeedRPM, frSpeedRPM, blSpeedRPM, brSpeedRPM):
         fastestSpeedRPM = max(abs(flSpeedRPM), abs(frSpeedRPM), abs(blSpeedRPM), abs(brSpeedRPM))
@@ -181,38 +142,9 @@ class Drive:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 drive = Drive()
-timer = Timer()
 
-# wheelPos = 0
-
-def robotPeriodic():
-    timer.event(robotPeriodic, Constants.LOOP_PERIOD_MSECS)
-
+while True:
     xIn = -controller.axis4.position() * 0.01
     yIn = controller.axis3.position() * 0.01
     thetaIn = -controller.axis1.position() * 0.01
@@ -221,10 +153,3 @@ def robotPeriodic():
     magnitude = math.sqrt(xIn**2 + yIn**2)
 
     drive.applySpeeds(direction, magnitude * 1.0, thetaIn * 2 * math.pi, True)
-
-    print("X Meters: " + str(drive.odometry.getXMeters()), "Y Meters: " + str(drive.odometry.getYMeters()), "Rotation Radians: " + str(drive.odometry.getRotationRad()))
-
-    drive.periodic()
-
-
-robotPeriodic()
