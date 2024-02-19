@@ -16,14 +16,16 @@ brain = Brain()
 controller = Controller()
 
 class DevicePorts:
-    FL_DRIVE = Ports.PORT19
-    FR_DRIVE = Ports.PORT20
-    BL_DRIVE = Ports.PORT10
-    BR_DRIVE = Ports.PORT9
+    
+    FL_DRIVE = Ports.PORT20
+    FR_DRIVE = Ports.PORT9
+    BL_DRIVE = Ports.PORT17
+    BR_DRIVE = Ports.PORT10
 
     GYRO = Ports.PORT5
 
 class Constants:
+        
         WHEEL_DIAMETER_IN = 4
         WHEEL_CIRCUMFERENCE_IN = WHEEL_DIAMETER_IN * math.pi
 
@@ -37,67 +39,122 @@ class Constants:
         # where phi is the angle between the x/y axis and the wheel vectors, which is always some multiple of pi/4
         SEC_PHI = 2 / math.sqrt(2)
 
-        FUDGE_ODOMETRY_COEFF = 3
+        DRIVE_TRAIN_IDLE_MODE = BRAKE
+
+        DRIVE_TRANSLATION_KP = 0.16
+
+        DRIVE_ROTATION_KP = 0.8
+
+        DRIVE_MAX_SPEED_METERS_PER_SEC = 0.2
+
+        ODOM_X_POSITIVE_DRIFT = 194 / 200
+        ODOM_X_NEGATIVE_DRIFT = 207 / 200
+        ODOM_Y_POSITIVE_DRIFT = 180 / 200
+        ODOM_Y_NEGATIVE_DRIFT = 211 / 200
+
+        ODOM_Y_DRIFT_PER_POSITIVE_X_TRANSLATION = 5 / 200
+        ODOM_Y_DRIFT_PER_NEGATIVE_X_TRANSLATION = -17 / 200
+
+
 
 class Odometry:
-    def __init__(self, x: float, y: float, theta: float, loopPeriodMSecs: float) -> None:
+
+    def __init__(self, x: float, y: float, theta: float):
         self.xMeters = x
         self.yMeters = y
-        self.rotationRad = theta
-        self.loopPeriodSecs = loopPeriodMSecs / 1000
-        self.timer = Timer()
+        self.thetaRad = theta
+        # self.loopPeriodSecs = loopPeriodMSecs / 1000
+        # self.timer = Timer()
 
-    def update(self, xVelocityMetersPerSec: float, yVelocityMetersPerSec: float, headingRad: float):
-        self.xMeters += (xVelocityMetersPerSec * self.timer.value())
-        self.yMeters += (yVelocityMetersPerSec * self.timer.value())
-        self.rotationRad = headingRad
-        self.timer.reset()
+    # def update(self, xVelocityMetersPerSec: float, yVelocityMetersPerSec: float, headingRad: float):
+    #     self.xMeters += (xVelocityMetersPerSec * self.timer.value())
+    #     self.yMeters += (yVelocityMetersPerSec * self.timer.value())
+    #     self.rotationRad = headingRad
+    #     self.timer.reset()
     
-    def getXMeters(self):
+    prevTranslationMeters = 0.0
+    def update(self, fieldOrientedTranslationRad: float, translationMeters: float, headingRad: float):
+        translationDeltaMeters = abs(translationMeters - self.prevTranslationMeters)
+        self.prevTranslationMeters = translationMeters
+
+        # As the wheels approach parallel/orthoginal to the drive direction, we don't need to compensate for carpet drift
+        robotRelativeTranslationRad = fieldOrientedTranslationRad + headingRad
+        driftCompPercentage = abs(math.cos((2 * robotRelativeTranslationRad) % math.pi))
+
+        xDelta = translationDeltaMeters * math.cos(fieldOrientedTranslationRad)
+        yDelta = translationDeltaMeters * math.sin(fieldOrientedTranslationRad)
+
+        print("x delta: " + str(xDelta), "y delta: " + str(yDelta))
+
+        if(yDelta > 0):
+            yDelta *= (Constants.ODOM_Y_POSITIVE_DRIFT ** driftCompPercentage)
+        else:
+            yDelta *= (Constants.ODOM_Y_NEGATIVE_DRIFT ** driftCompPercentage)
+
+        if(xDelta > 0):
+            xDelta *= (Constants.ODOM_X_POSITIVE_DRIFT ** driftCompPercentage)
+            yDelta += ((xDelta * Constants.ODOM_Y_DRIFT_PER_POSITIVE_X_TRANSLATION))# * driftCompPercentage)
+        else:
+            xDelta *= (Constants.ODOM_X_NEGATIVE_DRIFT ** driftCompPercentage)
+            yDelta += ((xDelta * Constants.ODOM_Y_DRIFT_PER_NEGATIVE_X_TRANSLATION))# * driftCompPercentage)
+
+        self.xMeters += xDelta
+        self.yMeters += yDelta
+        self.thetaRad = headingRad
+    
+    def getXMeters(self) -> float:
         return self.xMeters
     
-    def getYMeters(self):
+    def getYMeters(self) -> float:
         return self.yMeters
     
-    def getRotationRad(self):
-        return self.rotationRad
+    def getThetaRad(self) -> float:
+        return self.thetaRad
 
 class Drive:
+
     flDrive = Motor(DevicePorts.FL_DRIVE)
     frDrive = Motor(DevicePorts.FR_DRIVE)
     blDrive = Motor(DevicePorts.BL_DRIVE)
     brDrive = Motor(DevicePorts.BR_DRIVE)
 
+    flDrive.set_stopping(Constants.DRIVE_TRAIN_IDLE_MODE)
+    frDrive.set_stopping(Constants.DRIVE_TRAIN_IDLE_MODE)
+    blDrive.set_stopping(Constants.DRIVE_TRAIN_IDLE_MODE)
+    brDrive.set_stopping(Constants.DRIVE_TRAIN_IDLE_MODE)
+
     gyro = Inertial(DevicePorts.GYRO)
 
-    odometry = Odometry(0, 0, 0, Constants.LOOP_PERIOD_MSECS)
+    odometry = Odometry(0, 0, 0)
 
-    def __init__(self):
-        self.gyro.calibrate()
-        while self.gyro.is_calibrating():
-            pass
-        print("GYRO CALIBRATED")
+    def __init__(self, heading = 0, calibrateGyro = False):
+        if calibrateGyro:
+            self.gyro.calibrate()
+            while self.gyro.is_calibrating():
+                pass
+            print("GYRO CALIBRATED")
+            self.gyro.set_heading(heading)
 
     @staticmethod
-    def __metersPerSecToRPM(speedMetersPerSec):
+    def __revolutionsToMeters(revolutions) -> float:
+        return (revolutions * Constants.WHEEL_CIRCUMFERENCE_IN) / (39.3701)
+
+    @staticmethod
+    def __metersPerSecToRPM(speedMetersPerSec) -> float:
         return (speedMetersPerSec * 39.3701 * 60) / (Constants.WHEEL_CIRCUMFERENCE_IN)
     
     @staticmethod
-    def __rpmToMetersPerSecond(speedMetersPerSec):
+    def __rpmToMetersPerSecond(speedMetersPerSec) -> float:
         return (speedMetersPerSec * Constants.WHEEL_CIRCUMFERENCE_IN) / (39.3701 * 60)
     
-
     @staticmethod
-    def __radPerSecToRPM(speedRadPerSec):
+    def __radPerSecToRPM(speedRadPerSec) -> float:
         return (speedRadPerSec * Constants.WHEEL_CIRCUMFERENCE_IN * 60) / (2 * math.pi * Constants.WHEEL_CIRCUMFERENCE_IN)
 
     def periodic(self):
-        directionRad = self.getActualDirectionOfTravelRad()
-        speedMetersPerSecond = self.getActualSpeedMetersPerSec()
-        
         self.odometry.update(
-            speedMetersPerSecond * math.sin(directionRad),
-            speedMetersPerSecond * math.cos(directionRad),
+            self.getActualDirectionOfTravelRad(),
+            self.getDistanceTraveledMeters(),
             self.gyro.heading(RotationUnits.REV) * 2 * math.pi
         )
 
@@ -111,10 +168,16 @@ class Drive:
             blSpeedRPM *= ratio
             brSpeedRPM *= ratio
         
-        self.flDrive.spin(FORWARD, flSpeedRPM)
-        self.frDrive.spin(FORWARD, frSpeedRPM)
-        self.blDrive.spin(FORWARD, blSpeedRPM)
-        self.brDrive.spin(FORWARD, brSpeedRPM)
+        self.flDrive.spin(FORWARD, round(flSpeedRPM, 4))
+        self.frDrive.spin(FORWARD, round(frSpeedRPM, 4))
+        self.blDrive.spin(FORWARD, round(blSpeedRPM, 4))
+        self.brDrive.spin(FORWARD, round(brSpeedRPM, 4))
+
+    def stop(self):
+        self.flDrive.stop()
+        self.frDrive.stop()
+        self.blDrive.stop()
+        self.brDrive.stop()
 
     def applySpeeds(self, directionRad: float, translationSpeedMetersPerSec: float, rotationSpeedRadPerSec: float, fieldOriented: bool):
         translationRPM = self.__metersPerSecToRPM(translationSpeedMetersPerSec)
@@ -136,7 +199,7 @@ class Drive:
             rotationRPM + (xProjectionRPM - yProjectionRPM)
         )
 
-    def getActualDirectionOfTravelRad(self, fieldOriented = True):
+    def getActualDirectionOfTravelRad(self, fieldOriented = True) -> float:
         xFL = self.flDrive.velocity() * math.cos(7 * math.pi / 4)
         yFL = self.flDrive.velocity() * math.sin(7 * math.pi / 4)
 
@@ -155,11 +218,31 @@ class Drive:
         direction = math.atan2(ySumVectors, xSumVectors)
 
         if fieldOriented:
-            direction += self.gyro.heading(RotationUnits.REV) * 2.0 * math.pi
+            direction -= self.gyro.heading(RotationUnits.REV) * 2 * math.pi
 
         return direction
     
-    def getActualSpeedMetersPerSec(self):
+    def getDistanceTraveledMeters(self):
+        xFL = self.__revolutionsToMeters(self.flDrive.position()) * math.cos(7 * math.pi / 4)
+        yFL = self.__revolutionsToMeters(self.flDrive.position()) * math.sin(7 * math.pi / 4)
+
+        xFR = self.__revolutionsToMeters(self.blDrive.position()) * math.cos(math.pi / 4)
+        yFR = self.__revolutionsToMeters(self.blDrive.position()) * math.sin(math.pi / 4)
+        
+        xBL = self.__revolutionsToMeters(self.frDrive.position()) * math.cos(5 * math.pi / 4)
+        yBL = self.__revolutionsToMeters(self.frDrive.position()) * math.sin(5 * math.pi / 4)
+
+        xBR = self.__revolutionsToMeters(self.brDrive.position()) * math.cos(3 * math.pi / 4)
+        yBR = self.__revolutionsToMeters(self.brDrive.position()) * math.sin(3 * math.pi / 4)
+
+        xSumVectors = xFL + xFR + xBL + xBR
+        ySumVectors = yFL + yFR + yBL + yBR
+
+        magnitude = magnitude = self.__rpmToMetersPerSecond(math.sqrt(xSumVectors**2 + ySumVectors**2) / 4)
+
+        return magnitude
+    
+    def getActualSpeedMetersPerSec(self) -> float:
         xFL = self.flDrive.velocity() * math.cos(7 * math.pi / 4)
         yFL = self.flDrive.velocity() * math.sin(7 * math.pi / 4)
 
@@ -175,11 +258,42 @@ class Drive:
         xSumVectors = xFL + xFR + xBL + xBR
         ySumVectors = yFL + yFR + yBL + yBR
 
-        magnitude = magnitude = self.__rpmToMetersPerSecond(math.sqrt(xSumVectors**2 + ySumVectors**2) / 4)
+        magnitude = self.__rpmToMetersPerSecond(math.sqrt(xSumVectors**2 + ySumVectors**2) / 4)
 
         return magnitude
+    
+    def driveToPosition(self, xMeters: float, yMeters: float, headingRad: float):
+        xError = xMeters - self.odometry.getXMeters()
+        yError = yMeters - self.odometry.getYMeters()
 
+        xEffort = xError * Constants.DRIVE_TRANSLATION_KP
+        yEffort = yError * Constants.DRIVE_TRANSLATION_KP
 
+        direction = math.atan2(yEffort, xEffort)
+        magnitude = math.sqrt(xError**2 + yError**2)
+
+        thetaError = headingRad - self.odometry.getThetaRad()
+
+        if(thetaError > math.pi):
+            thetaError -= 2 * math.pi
+        elif(thetaError < -math.pi):
+            thetaError += 2 * math.pi
+
+        thetaEffort = thetaError * Constants.DRIVE_ROTATION_KP
+
+        if(abs(magnitude) > Constants.DRIVE_MAX_SPEED_METERS_PER_SEC):
+            magnitude = math.copysign(Constants.DRIVE_MAX_SPEED_METERS_PER_SEC, magnitude)
+
+        self.applySpeeds(direction, magnitude, thetaEffort, True)
+
+class LineSensorArray:
+
+    def __init__(self, leftSensorPort: DevicePorts, rightSensorPort: DevicePorts):
+        self.leftSensor = Line(leftSensorPort)
+        self.rightSensor = Line(rightSensorPort)
+
+    def getError(self) -> float:
+        return self.leftSensor.reflectivity() - self.rightSensor.reflectivity()
 
 
 
@@ -214,17 +328,22 @@ def robotPeriodic():
     timer.event(robotPeriodic, Constants.LOOP_PERIOD_MSECS)
 
     xIn = -controller.axis4.position() * 0.01
-    yIn = controller.axis3.position() * 0.01
+    yIn = -controller.axis3.position() * 0.01
     thetaIn = -controller.axis1.position() * 0.01
 
-    direction = math.atan2(xIn, yIn)
+    direction = math.atan2(yIn, xIn)
     magnitude = math.sqrt(xIn**2 + yIn**2)
 
-    drive.applySpeeds(direction, magnitude * 1.0, thetaIn * 2 * math.pi, True)
+    # drive.applySpeeds(direction, magnitude * 1.0, thetaIn * 2 * math.pi, True)
 
-    print("X Meters: " + str(drive.odometry.getXMeters()), "Y Meters: " + str(drive.odometry.getYMeters()), "Rotation Radians: " + str(drive.odometry.getRotationRad()))
+    drive.driveToPosition(-2, 0, 0)
+
+    # print("X Meters: " + str(drive.odometry.getXMeters()), "Y Meters: " + str(drive.odometry.getYMeters()), "Rotation Radians: " + str(drive.odometry.getThetaRad()))
+
+    
+
+    # print(drive.getDistanceTraveledMeters())
 
     drive.periodic()
-
 
 robotPeriodic()
