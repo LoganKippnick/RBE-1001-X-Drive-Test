@@ -24,12 +24,17 @@ class DevicePorts:
 
     GYRO = Ports.PORT5
 
+    FL_LINE = brain.three_wire_port.g
+    FR_LINE = brain.three_wire_port.b
+
 class Constants:
+        
+        LOOP_PERIOD_MS = 20
         
         WHEEL_DIAMETER_IN = 4
         WHEEL_CIRCUMFERENCE_IN = WHEEL_DIAMETER_IN * math.pi
 
-        DRIVE_BASE_RADIUS_IN = 7.75 # TODO
+        DRIVE_BASE_RADIUS_IN = 7.75
         DRIVE_BASE_CIRCUMFERENCE_IN = DRIVE_BASE_RADIUS_IN * 2 * math.pi
 
         MOTOR_MAX_SPEED_RPM = 200
@@ -45,6 +50,10 @@ class Constants:
 
         DRIVE_MAX_SPEED_METERS_PER_SEC = 0.2
 
+        DRIVE_FIND_LINE_SPEED_METERS_PER_SEC = 0.2
+
+        DRIVE_FOLLOW_LINE_SPEED_METERS_PER_SEC = 0.2
+
         ODOM_X_POSITIVE_DRIFT = 194 / 200
         ODOM_X_NEGATIVE_DRIFT = 207 / 200
         ODOM_Y_POSITIVE_DRIFT = 180 / 200
@@ -53,23 +62,24 @@ class Constants:
         ODOM_Y_DRIFT_PER_POSITIVE_X_TRANSLATION = 5 / 200
         ODOM_Y_DRIFT_PER_NEGATIVE_X_TRANSLATION = -17 / 200
 
+        LINE_REFLECTIVITY_THRESHOLD = 0.5
+
+        FOLLOW_LINE_KP = 0
+        FOLLOW_LINE_KD = 0
+
+
+        LEFT_LINE_Y_METERS = 0 # FIXME
+        RIGTH_LINE_Y_METERS = 0 # FIXME
+
 
 
 class Odometry:
 
-    def __init__(self, x: float, y: float, theta: float):
+    def __init__(self, x = 0.0, y = 0.0, theta = 0.0):
         self.xMeters = x
         self.yMeters = y
         self.thetaRad = theta
-        # self.loopPeriodSecs = loopPeriodMSecs / 1000
-        # self.timer = Timer()
-
-    # def update(self, xVelocityMetersPerSec: float, yVelocityMetersPerSec: float, headingRad: float):
-    #     self.xMeters += (xVelocityMetersPerSec * self.timer.value())
-    #     self.yMeters += (yVelocityMetersPerSec * self.timer.value())
-    #     self.rotationRad = headingRad
-    #     self.timer.reset()
-    
+        
     prevTranslationMeters = 0.0
     def update(self, fieldOrientedTranslationRad: float, translationMeters: float, headingRad: float):
         translationDeltaMeters = abs(translationMeters - self.prevTranslationMeters)
@@ -82,32 +92,65 @@ class Odometry:
         xDelta = translationDeltaMeters * math.cos(fieldOrientedTranslationRad)
         yDelta = translationDeltaMeters * math.sin(fieldOrientedTranslationRad)
 
-        print("x delta: " + str(xDelta), "y delta: " + str(yDelta))
-
-        if(yDelta > 0):
+        if(yDelta > 0.0):
             yDelta *= (Constants.ODOM_Y_POSITIVE_DRIFT ** driftCompPercentage)
         else:
             yDelta *= (Constants.ODOM_Y_NEGATIVE_DRIFT ** driftCompPercentage)
 
-        if(xDelta > 0):
+        if(xDelta > 0.0):
             xDelta *= (Constants.ODOM_X_POSITIVE_DRIFT ** driftCompPercentage)
-            yDelta += ((xDelta * Constants.ODOM_Y_DRIFT_PER_POSITIVE_X_TRANSLATION))# * driftCompPercentage)
+            yDelta += ((xDelta * Constants.ODOM_Y_DRIFT_PER_POSITIVE_X_TRANSLATION) * driftCompPercentage)
         else:
             xDelta *= (Constants.ODOM_X_NEGATIVE_DRIFT ** driftCompPercentage)
-            yDelta += ((xDelta * Constants.ODOM_Y_DRIFT_PER_NEGATIVE_X_TRANSLATION))# * driftCompPercentage)
+            yDelta += ((xDelta * Constants.ODOM_Y_DRIFT_PER_NEGATIVE_X_TRANSLATION) * driftCompPercentage)
 
         self.xMeters += xDelta
         self.yMeters += yDelta
         self.thetaRad = headingRad
+        
+class LineSensorArray:
+    __prevError = 0.0
+    __timer = Timer()
+
+    def __init__(self, leftSensorPort: Triport.TriportPort, rightSensorPort: Triport.TriportPort):
+        self.leftSensor = Line(leftSensorPort)
+        self.rightSensor = Line(rightSensorPort)
+        
+        self.periodic()
+
+    def periodic(self):
+        self.__timer.event(self.periodic, Constants.LOOP_PERIOD_MS)
+
+        if self.onLine():
+            self.__lastSensorOnLine = None
+        elif self.rightSensor.reflectivity() > Constants.LINE_REFLECTIVITY_THRESHOLD:
+            self.__lastSensorOnLine = RIGHT
+        elif self.leftSensor.reflectivity() > Constants.LINE_REFLECTIVITY_THRESHOLD:
+            self.__lastSensorOnLine = LEFT
+
+        self.__rate = (self.getError() - self.__prevError) / Constants.LOOP_PERIOD_MS
+        self.__prevError = self.getError()
+
+    def hasLine(self):
+        '''Line is detected by at least one sensor'''
+        return self.rightSensor.reflectivity() > Constants.LINE_REFLECTIVITY_THRESHOLD \
+            or self.leftSensor.reflectivity() > Constants.LINE_REFLECTIVITY_THRESHOLD
     
-    def getXMeters(self) -> float:
-        return self.xMeters
+    def onLine(self):
+        '''Line is detected by both sensors'''
+        return self.rightSensor.reflectivity() > Constants.LINE_REFLECTIVITY_THRESHOLD \
+            and self.leftSensor.reflectivity() > Constants.LINE_REFLECTIVITY_THRESHOLD
+
+    def getError(self) -> float:
+        return self.rightSensor.reflectivity() - self.leftSensor.reflectivity()
     
-    def getYMeters(self) -> float:
-        return self.yMeters
+    def getRate(self) -> float:
+        return self.__rate
     
-    def getThetaRad(self) -> float:
-        return self.thetaRad
+    def getLastSensorOnLine(self):
+        '''Returns RIGHT for right sensor, LEFT for leftsensor, or None if they are both on the line'''
+        return self.__lastSensorOnLine
+
 
 class Drive:
 
@@ -123,15 +166,19 @@ class Drive:
 
     gyro = Inertial(DevicePorts.GYRO)
 
-    odometry = Odometry(0, 0, 0)
+    odometry = Odometry(0.0, 0.0, 0.0)
 
-    def __init__(self, heading = 0, calibrateGyro = False):
+    __timer = Timer()
+
+    def __init__(self, heading = 0.0, calibrateGyro = False):
         if calibrateGyro:
             self.gyro.calibrate()
             while self.gyro.is_calibrating():
                 pass
             print("GYRO CALIBRATED")
             self.gyro.set_heading(heading)
+        
+        self.periodic()
 
     @staticmethod
     def __revolutionsToMeters(revolutions) -> float:
@@ -150,6 +197,8 @@ class Drive:
         return (speedRadPerSec * Constants.WHEEL_CIRCUMFERENCE_IN * 60) / (2 * math.pi * Constants.WHEEL_CIRCUMFERENCE_IN)
 
     def periodic(self):
+        self.__timer.event(self.periodic, Constants.LOOP_PERIOD_MS)
+
         self.odometry.update(
             self.getActualDirectionOfTravelRad(),
             self.getDistanceTraveledMeters(),
@@ -177,7 +226,7 @@ class Drive:
         self.blDrive.stop()
         self.brDrive.stop()
 
-    def applySpeeds(self, directionRad: float, translationSpeedMetersPerSec: float, rotationSpeedRadPerSec: float, fieldOriented: bool):
+    def applySpeeds(self, directionRad: float, translationSpeedMetersPerSec: float, rotationSpeedRadPerSec: float, fieldOriented = True):
         translationRPM = self.__metersPerSecToRPM(translationSpeedMetersPerSec)
         rotationRPM = -self.__radPerSecToRPM(rotationSpeedRadPerSec)
 
@@ -261,8 +310,8 @@ class Drive:
         return magnitude
     
     def driveToPosition(self, xMeters: float, yMeters: float, headingRad: float):
-        xError = xMeters - self.odometry.getXMeters()
-        yError = yMeters - self.odometry.getYMeters()
+        xError = xMeters - self.odometry.xMeters
+        yError = yMeters - self.odometry.yMeters
 
         xEffort = xError * Constants.DRIVE_TRANSLATION_KP
         yEffort = yError * Constants.DRIVE_TRANSLATION_KP
@@ -270,11 +319,11 @@ class Drive:
         direction = math.atan2(yEffort, xEffort)
         magnitude = math.sqrt(xError**2 + yError**2)
 
-        thetaError = headingRad - self.odometry.getThetaRad()
+        thetaError = headingRad - self.odometry.thetaRad
 
-        if(thetaError > math.pi):
+        if thetaError > math.pi:
             thetaError -= 2 * math.pi
-        elif(thetaError < -math.pi):
+        elif thetaError < -math.pi:
             thetaError += 2 * math.pi
 
         thetaEffort = thetaError * Constants.DRIVE_ROTATION_KP
@@ -284,18 +333,33 @@ class Drive:
 
         self.applySpeeds(direction, magnitude, thetaEffort, True)
 
-class LineSensorArray:
+    def followLine(self, odomXMetersTarget: float, odomLineYMeters: float, speedMetersPerSec: float, lineSensorArray: LineSensorArray, findLineIfOff = True):
+        if lineSensorArray.hasLine():
+            self.odometry.yMeters = odomLineYMeters
 
-    def __init__(self, leftSensorPort: DevicePorts, rightSensorPort: DevicePorts):
-        self.leftSensor = Line(leftSensorPort)
-        self.rightSensor = Line(rightSensorPort)
+            driveEffort = (odomXMetersTarget - self.odometry.xMeters) * Constants.DRIVE_TRANSLATION_KP
+            if(abs(driveEffort) < speedMetersPerSec):
+                driveEffort = math.copysign(speedMetersPerSec, driveEffort)
 
-    def getError(self) -> float:
-        return self.leftSensor.reflectivity() - self.rightSensor.reflectivity()
+            rotEffort = lineSensorArray.getError() * Constants.FOLLOW_LINE_KP + lineSensorArray.getRate() * Constants.FOLLOW_LINE_KD
+
+            self.applySpeeds(0, driveEffort, rotEffort, False)
+        elif findLineIfOff:
+            if lineSensorArray.getLastSensorOnLine() == RIGHT:
+                self.applySpeeds(0, Constants.DRIVE_FIND_LINE_SPEED_METERS_PER_SEC, 0, True)
+            elif lineSensorArray.getLastSensorOnLine() == LEFT:
+                self.applySpeeds(0, -Constants.DRIVE_FIND_LINE_SPEED_METERS_PER_SEC, 0, True)
+
+timer = Timer()
 
 drive = Drive()
 
-while True:
+frontLine = LineSensorArray(DevicePorts.FL_LINE, DevicePorts.FR_LINE)
+
+
+def robotPeriodic():
+    timer.event(robotPeriodic, Constants.LOOP_PERIOD_MS)
+
     xIn = -controller.axis4.position() * 0.01
     yIn = -controller.axis3.position() * 0.01
     thetaIn = -controller.axis1.position() * 0.01
@@ -305,14 +369,12 @@ while True:
 
     # drive.applySpeeds(direction, magnitude * 1.0, thetaIn * 2 * math.pi, True)
 
-    drive.driveToPosition(-2, 0, 0)
+    drive.followLine(2, 0, 0.2, frontLine, False)
 
     # print("X Meters: " + str(drive.odometry.getXMeters()), "Y Meters: " + str(drive.odometry.getYMeters()), "Rotation Radians: " + str(drive.odometry.getThetaRad()))
-
+    print("Line error: " + str(frontLine.getError()))
     
 
-    # print(drive.getDistanceTraveledMeters())
-
-    drive.periodic()
+    # print(drive.getDistanceTravelerodMeters())
 
 robotPeriodic()
