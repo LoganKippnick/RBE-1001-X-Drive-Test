@@ -34,8 +34,6 @@ class Constants:
 
         MOTOR_MAX_SPEED_RPM = 200
 
-        LOOP_PERIOD_MSECS = 20
-
         # where phi is the angle between the x/y axis and the wheel vectors, which is always some multiple of pi/4
         SEC_PHI = 2 / math.sqrt(2)
 
@@ -295,38 +293,9 @@ class LineSensorArray:
     def getError(self) -> float:
         return self.leftSensor.reflectivity() - self.rightSensor.reflectivity()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 drive = Drive()
-timer = Timer()
 
-# wheelPos = 0
-
-def robotPeriodic():
-    timer.event(robotPeriodic, Constants.LOOP_PERIOD_MSECS)
-
+while True:
     xIn = -controller.axis4.position() * 0.01
     yIn = -controller.axis3.position() * 0.01
     thetaIn = -controller.axis1.position() * 0.01
