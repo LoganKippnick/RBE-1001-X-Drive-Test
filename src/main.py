@@ -44,6 +44,7 @@ class Constants:
 
         DRIVE_TRAIN_IDLE_MODE = BRAKE
 
+<<<<<<< HEAD
         DRIVE_TRANSLATION_KP = 1.5
 
         DRIVE_ROTATION_KP = 1.5
@@ -51,6 +52,15 @@ class Constants:
         DRIVE_MAX_SPEED_METERS_PER_SEC = 0.2
 
         DRIVE_FIND_LINE_SPEED_METERS_PER_SEC = 0.1
+=======
+        DRIVE_TRANSLATION_KP = 0.16
+
+        DRIVE_ROTATION_KP = 0.8
+
+        DRIVE_MAX_SPEED_METERS_PER_SEC = 0.2
+
+        DRIVE_FIND_LINE_SPEED_METERS_PER_SEC = 0.2
+>>>>>>> e58a48cdac65df4adea58077d7bc71319ff9223b
 
         DRIVE_FOLLOW_LINE_SPEED_METERS_PER_SEC = 0.2
 
@@ -62,10 +72,17 @@ class Constants:
         ODOM_Y_DRIFT_PER_POSITIVE_X_TRANSLATION = 5 / 200
         ODOM_Y_DRIFT_PER_NEGATIVE_X_TRANSLATION = -17 / 200
 
+<<<<<<< HEAD
         LINE_REFLECTIVITY_THRESHOLD = 25
 
         FOLLOW_LINE_KP = 0.001
         FOLLOW_LINE_KD = 0.00003
+=======
+        LINE_REFLECTIVITY_THRESHOLD = 0.5
+
+        FOLLOW_LINE_KP = 0
+        FOLLOW_LINE_KD = 0
+>>>>>>> e58a48cdac65df4adea58077d7bc71319ff9223b
 
 
         LEFT_LINE_Y_METERS = 0 # FIXME
@@ -128,7 +145,11 @@ class LineSensorArray:
         elif self.leftSensor.reflectivity() > Constants.LINE_REFLECTIVITY_THRESHOLD:
             self.__lastSensorOnLine = LEFT
 
+<<<<<<< HEAD
         self.__rate = (self.getError() - self.__prevError) / (Constants.LOOP_PERIOD_MS / 1000)
+=======
+        self.__rate = (self.getError() - self.__prevError) / Constants.LOOP_PERIOD_MS
+>>>>>>> e58a48cdac65df4adea58077d7bc71319ff9223b
         self.__prevError = self.getError()
 
     def hasLine(self):
@@ -215,6 +236,15 @@ class Drive:
             self.gyro.heading(RotationUnits.REV) * 2 * math.pi
         )
 
+    def periodic(self):
+        self.__timer.event(self.periodic, Constants.LOOP_PERIOD_MS)
+
+        self.odometry.update(
+            self.getActualDirectionOfTravelRad(),
+            self.getDistanceTraveledMeters(),
+            self.gyro.heading(RotationUnits.REV) * 2 * math.pi
+        )
+
     def applyDesaturated(self, flSpeedRPM, frSpeedRPM, blSpeedRPM, brSpeedRPM):
         fastestSpeedRPM = max(abs(flSpeedRPM), abs(frSpeedRPM), abs(blSpeedRPM), abs(brSpeedRPM))
         if(fastestSpeedRPM > Constants.MOTOR_MAX_SPEED_RPM):
@@ -256,11 +286,14 @@ class Drive:
             rotationRPM + (xProjectionRPM - yProjectionRPM)
         )
 
+<<<<<<< HEAD
     def applySpeedsCartesian(self, xSpeedMetersPerSec: float, ySpeedMetersPerSec: float, rotationSpeedRadPerSec: float, fieldOriented = True):
         direction = math.atan2(ySpeedMetersPerSec, xSpeedMetersPerSec)
         magnitude = math.sqrt(xSpeedMetersPerSec ** 2 + ySpeedMetersPerSec ** 2)
         self.applySpeeds(direction, magnitude, rotationSpeedRadPerSec, fieldOriented)
 
+=======
+>>>>>>> e58a48cdac65df4adea58077d7bc71319ff9223b
     def getActualDirectionOfTravelRad(self, fieldOriented = True) -> float:
         xFL = self.flDrive.velocity() * math.cos(7 * math.pi / 4)
         yFL = self.flDrive.velocity() * math.sin(7 * math.pi / 4)
@@ -334,6 +367,7 @@ class Drive:
         direction = math.atan2(yEffort, xEffort)
         magnitude = math.sqrt(xError**2 + yError**2)
 
+<<<<<<< HEAD
         if abs(magnitude) > Constants.DRIVE_MAX_SPEED_METERS_PER_SEC:
             magnitude = math.copysign(Constants.DRIVE_MAX_SPEED_METERS_PER_SEC, magnitude)
 
@@ -357,6 +391,38 @@ class Drive:
                 self.applySpeedsCartesian(driveEffort, Constants.DRIVE_FIND_LINE_SPEED_METERS_PER_SEC, self.calcThetaControlRadPerSec(headingRad), True)
             else:
                 self.stop()
+=======
+        thetaError = headingRad - self.odometry.thetaRad
+
+        if thetaError > math.pi:
+            thetaError -= 2 * math.pi
+        elif thetaError < -math.pi:
+            thetaError += 2 * math.pi
+
+        thetaEffort = thetaError * Constants.DRIVE_ROTATION_KP
+
+        if(abs(magnitude) > Constants.DRIVE_MAX_SPEED_METERS_PER_SEC):
+            magnitude = math.copysign(Constants.DRIVE_MAX_SPEED_METERS_PER_SEC, magnitude)
+
+        self.applySpeeds(direction, magnitude, thetaEffort, True)
+
+    def followLine(self, odomXMetersTarget: float, odomLineYMeters: float, speedMetersPerSec: float, lineSensorArray: LineSensorArray, findLineIfOff = True):
+        if lineSensorArray.hasLine():
+            self.odometry.yMeters = odomLineYMeters
+
+            driveEffort = (odomXMetersTarget - self.odometry.xMeters) * Constants.DRIVE_TRANSLATION_KP
+            if(abs(driveEffort) < speedMetersPerSec):
+                driveEffort = math.copysign(speedMetersPerSec, driveEffort)
+
+            rotEffort = lineSensorArray.getError() * Constants.FOLLOW_LINE_KP + lineSensorArray.getRate() * Constants.FOLLOW_LINE_KD
+
+            self.applySpeeds(0, driveEffort, rotEffort, False)
+        elif findLineIfOff:
+            if lineSensorArray.getLastSensorOnLine() == RIGHT:
+                self.applySpeeds(0, Constants.DRIVE_FIND_LINE_SPEED_METERS_PER_SEC, 0, True)
+            elif lineSensorArray.getLastSensorOnLine() == LEFT:
+                self.applySpeeds(0, -Constants.DRIVE_FIND_LINE_SPEED_METERS_PER_SEC, 0, True)
+>>>>>>> e58a48cdac65df4adea58077d7bc71319ff9223b
 
 timer = Timer()
 
@@ -377,10 +443,17 @@ def robotPeriodic():
 
     # drive.applySpeeds(direction, magnitude * 1.0, thetaIn * 2 * math.pi, True)
 
+<<<<<<< HEAD
     drive.followLine(-1.25, 0, frontLine, findLineIfOff = True)
 
     print("X Meters: " + str(drive.odometry.xMeters), "Y Meters: " + str(drive.odometry.yMeters), "Rotation Radians: " + str(drive.odometry.thetaRad))
     # print("Line error: " + str(frontLine.getError()), frontLine.getRate())
+=======
+    drive.followLine(2, 0, 0.2, frontLine, False)
+
+    # print("X Meters: " + str(drive.odometry.getXMeters()), "Y Meters: " + str(drive.odometry.getYMeters()), "Rotation Radians: " + str(drive.odometry.getThetaRad()))
+    print("Line error: " + str(frontLine.getError()))
+>>>>>>> e58a48cdac65df4adea58077d7bc71319ff9223b
     
 
     # print(drive.getDistanceTravelerodMeters())
