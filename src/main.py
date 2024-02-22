@@ -364,20 +364,19 @@ drive = Drive()
 
 frontLine = LineSensorArray(DevicePorts.FL_LINE, DevicePorts.FR_LINE)
 
-
+targetX = 2.0
 def robotPeriodic():
+    global targetX
+
     timer.event(robotPeriodic, Constants.LOOP_PERIOD_MS)
 
-    xIn = -controller.axis4.position() * 0.01
-    yIn = -controller.axis3.position() * 0.01
-    thetaIn = -controller.axis1.position() * 0.01
+    drive.driveToPosition(targetX, 0, 0)
 
-    direction = math.atan2(yIn, xIn)
-    magnitude = math.sqrt(xIn**2 + yIn**2)
+    # effort = (targetX - drive.odometry.xMeters) * Constants.DRIVE_TRANSLATION_KP
+    # drive.applySpeedsCartesian(effort, 0, drive.calcThetaControlRadPerSec(0))
 
-    # drive.applySpeeds(direction, magnitude * 1.0, thetaIn * 2 * math.pi, True)
-
-    drive.followLine(-1.25, 0, frontLine, findLineIfOff = True)
+    if abs(2.0 - drive.odometry.xMeters) < 0.01:
+        targetX = 0.0
 
     print("X Meters: " + str(drive.odometry.xMeters), "Y Meters: " + str(drive.odometry.yMeters), "Rotation Radians: " + str(drive.odometry.thetaRad))
     # print("Line error: " + str(frontLine.getError()), frontLine.getRate())
@@ -386,3 +385,14 @@ def robotPeriodic():
     # print(drive.getDistanceTravelerodMeters())
 
 robotPeriodic()
+
+
+def teleOpControl():
+    xIn = -controller.axis4.position() * 0.01
+    yIn = -controller.axis3.position() * 0.01
+    thetaIn = -controller.axis1.position() * 0.01
+
+    direction = math.atan2(yIn, xIn)
+    magnitude = math.sqrt(xIn**2 + yIn**2)
+
+    drive.applySpeeds(direction, magnitude * 1.0, thetaIn * 2 * math.pi, True)
